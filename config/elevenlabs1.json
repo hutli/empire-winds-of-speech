@@ -1,0 +1,82 @@
+[
+  {
+    "id": "ThT5KcBeYPX3keUQqHPh",
+    "name": "Dorothy",
+    "use": true,
+    "model": "eleven_multilingual_v1",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "pFZP5JQG7iQjIQuC4Bku",
+    "name": "Lily",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "D38z5RcWu1voky8WS1ja",
+    "name": "Fin",
+    "use": false,
+    "model": "eleven_multilingual_v1",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "JBFqnCBsd6RMkjVDRZzb",
+    "name": "George",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "EcHSoedtfJImoYjBrw5Y",
+    "name": "Valentino",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "2gsckjDZMXaH4J35vAgt",
+    "name": "Brian",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "dSyhAGzx7MQxt2TTKuQN",
+    "name": "Ella",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "52f6C7EAokdmkjSn6Mk8",
+    "name": "Emily",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "LgGXqiXAgeWadT5JmJWB",
+    "name": "Knightley",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  },
+  {
+    "id": "fRFZhRTWBGsfpGjWofzG",
+    "name": "Victoria",
+    "use": true,
+    "model": "eleven_multilingual_v2",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+    "generation_config": { "chunk_length_schedule": [500] }
+  }
+]
