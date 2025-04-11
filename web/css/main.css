@@ -93,8 +93,14 @@ img {
 }
 
 cite {
-  margin: 10px;
+  margin: 0 20px 0 20px;
+  padding: 10px;
+  background-image: url(https://www.profounddecisions.co.uk/mediawiki-public/skins/ImperialWizard/img/parch.png?5247a);
+  border-radius: 10px;
   display: block;
+}
+cite span {
+  color: #333333;
 }
 
 .section {
