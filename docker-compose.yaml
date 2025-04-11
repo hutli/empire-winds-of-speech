@@ -7,6 +7,7 @@ services:
       GENERATE_ARTICLES: "yes"
       # REFRESH_ARTICLES: "yes"
       MONGODB_DOMAIN: "mongodb"
+      VOICES_JSON: "config/elevenlabs0.json"
     ports:
       - 127.0.0.1:4010:80
     volumes:
