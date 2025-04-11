@@ -33,8 +33,9 @@ CONFIG_DIR = pathlib.Path("config")
 dotenv.load_dotenv(CONFIG_DIR / ".env")
 
 ELEVENLABS_API_KEY = os.environ["ELEVENLABS_API_KEY"]
+VOICES_JSON = os.environ["VOICES_JSON"]
 
-with open(CONFIG_DIR / "voices.json") as f:
+with open(VOICES_JSON) as f:
     VOICES = json.load(f)
 
 GLOBAL_REPLACE = [
@@ -120,11 +121,14 @@ SECTION_TYPE_PRE_DELAY = {
     "h1": 2,
     "h2": 1,
     "h3": 0.5,
+    "h4": 0.5,
     "p": 0.5,
     "ol": 0.5,
     "ul": 0.5,
     "cite": 0.5,
 }
+OUTRO_PRE_DELAY = 2
+
 app = FastAPI()
 mongodb_client: pymongo.MongoClient = pymongo.MongoClient(MONGODB_DOMAIN, 27017)
 DB = mongodb_client["database"]
@@ -161,6 +165,10 @@ class ElevenLabsQuotaExceededError(ElevenLabsError):
 
 
 class ElevenLabsSystemBusyError(ElevenLabsError):
+    pass
+
+
+class ElevenLabsInputTimeoutExceededError(ElevenLabsError):
     pass
 
 
@@ -210,8 +218,10 @@ async def elevenlabs_tts_alignment(
             if "error" in r:
                 if r["error"] == "quota_exceeded":
                     raise ElevenLabsQuotaExceededError(r["message"])
-                if r["error"] == "system_busy":
+                elif r["error"] == "system_busy":
                     raise ElevenLabsSystemBusyError(r["message"])
+                elif r["error"] == "input_timeout_exceeded":
+                    raise ElevenLabsInputTimeoutExceededError(r["message"])
                 else:
                     raise ElevenLabsError(r)
 
@@ -363,6 +373,9 @@ async def generate_voice_from_text(
                 f"Elevenlabs servers busy, waiting 10s for them to catch up: {e}"
             )
             await asyncio.sleep(10)
+        except ElevenLabsInputTimeoutExceededError as e:
+            logger.warning(f"Mistiming of input text, retrying in 10s: {e}")
+            await asyncio.sleep(10)
         except websockets.exceptions.ConnectionClosedError as e:
             logger.warning(
                 f"Websocket connection closed unexpectedly, trying again in 10s: {e}"
@@ -483,26 +496,37 @@ def generate_disallowed_manuscript(article_id: str) -> dict:
     return article
 
 
+def has_class(content: Tag, class_name: str) -> bool:
+    return bool(
+        content.attrs and "class" in content.attrs and class_name in content["class"]
+    )
+
+
 def content_to_sections(
     content: Tag, audio_dir: pathlib.Path
 ) -> typing.Generator[dict, None, None]:
     i = 0
     for child in content.findChildren(recursive=False):
         text = None
+        children = child.findChildren(recursive=False)
 
         if child.name == "ul" or child.name == "ol":
-            text = [
-                c.text.strip()
-                for c in child.findChildren(recursive=False)
-                if c.text.strip()
-            ]
-        elif (
-            child.name == "div"
-            and child.attrs
-            and "class" in child.attrs
-            and "ic" in child["class"]
-        ):
-            for c in child.text.split("\n"):
+            text = [c.text.strip() for c in children if c.text.strip()]
+        elif child.name == "div" and has_class(child, "ic"):
+            if len(children) != 1:
+                logger.error(
+                    f"Error while parsing ic section (in-character quote)! Expected exactly 1 child, got {len(child.children)}"
+                )
+                return
+            child = children[0]
+
+            tmp_sections = []
+            if has_class(child, "quote"):
+                tmp_sections = [c.text for c in child.children]
+            else:
+                tmp_sections = child.text.split("\n")
+
+            for c in tmp_sections:
                 if block := c.strip():
                     yield {
                         "section_type": "cite",
@@ -731,12 +755,22 @@ def generate_complete_audio(article_id: str) -> None:
                 sound = sound.append(
                     pydub.AudioSegment.from_mp3(section["audio_path"]), crossfade=0
                 )
+
     else:
         raise Exception(f"Article not yet generated!")
 
     if not sound:
         logger.error(f'No sections in "{article_id}"!')
         return
+
+    if "outro" in manuscript and "audio_path" in manuscript["outro"]:
+        sound.append(
+            pydub.AudioSegment.silent(duration=OUTRO_PRE_DELAY * 1000), crossfade=0
+        )
+        sound.append(
+            pydub.AudioSegment.from_mp3(manuscript["outro"]["audio_path"]),
+            crossfade=0,
+        )
 
     res_dir = DB_DIR / article_id
     res_dir.mkdir(parents=True, exist_ok=True)
@@ -924,7 +958,7 @@ def article_processor(queue: multiprocessing.Queue) -> None:
                 generate_complete_audio(manuscript["_id"])
             except Exception as e:
                 logger.error(
-                    f'Article "{manuscript["title"]}" has breaking errors, force-updating manuscript - "{e}"'
+                    f'Article "{manuscript["title"]}" has breaking errors, force-updating manuscript - "{type(e)}: {e}"'
                 )
                 update_manuscript(manuscript, "Manuscript error")
                 generate_complete_audio(manuscript["_id"])
@@ -997,10 +1031,10 @@ def index(article_id: str) -> HTMLResponse:
         content=index,
         status_code=(
             HTTP_LOOKUP[article["_id"]]
-            if article["_id"] in HTTP_LOOKUP
+            if article and article["_id"] in HTTP_LOOKUP
             else (
                 HTTP_LOOKUP[article["state"]]
-                if "state" in article and article["state"] in HTTP_LOOKUP
+                if article and "state" in article and article["state"] in HTTP_LOOKUP
                 else 404
             )
         ),
