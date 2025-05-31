@@ -128,6 +128,9 @@ SECTION_TYPE_PRE_DELAY = {
     "cite": 0.5,
 }
 OUTRO_PRE_DELAY = 2
+OUTRO_POST_SILENCE = 4
+
+CHAPTER_TYPE = "h2"
 
 app = FastAPI()
 mongodb_client: pymongo.MongoClient = pymongo.MongoClient(MONGODB_DOMAIN, 27017)
@@ -152,8 +155,8 @@ class ELVoice:
     name: str
     use: bool
     model: str
-    voice_settings: ELVoiceSettings
-    generation_config: ELGenerationConfig
+    voice_settings: ELVoiceSettings | None = None
+    generation_config: ELGenerationConfig | None = None
 
 
 class ElevenLabsError(Exception):
@@ -169,6 +172,10 @@ class ElevenLabsSystemBusyError(ElevenLabsError):
 
 
 class ElevenLabsInputTimeoutExceededError(ElevenLabsError):
+    pass
+
+
+class ElevenLabsSomethingWentWrong(ElevenLabsError):
     pass
 
 
@@ -201,9 +208,11 @@ async def elevenlabs_tts_alignment(
             "text": text,
             "try_trigger_generation": True,
             "xi_api_key": ELEVENLABS_API_KEY,
-            "voice_settings": dataclasses.asdict(voice.voice_settings),
-            "generation_config": dataclasses.asdict(voice.generation_config),
         }
+        if voice.voice_settings:
+            body["voice_settings"] = dataclasses.asdict(voice.voice_settings)
+        if voice.generation_config:
+            body["generation_config"] = dataclasses.asdict(voice.generation_config)
 
         await websocket.send(json.dumps(body))
         await websocket.send(json.dumps({"text": ""}))
@@ -222,6 +231,8 @@ async def elevenlabs_tts_alignment(
                     raise ElevenLabsSystemBusyError(r["message"])
                 elif r["error"] == "input_timeout_exceeded":
                     raise ElevenLabsInputTimeoutExceededError(r["message"])
+                elif r["error"] == "something_went_wrong":
+                    raise ElevenLabsSomethingWentWrong(r["message"])
                 else:
                     raise ElevenLabsError(r)
 
@@ -265,9 +276,7 @@ async def elevenlabs_tts_alignment(
 
         return (
             match_target_amplitude(
-                pydub.effects.normalize(
-                    pydub.AudioSegment.from_mp3(io.BytesIO(audio))  # type: ignore
-                ),
+                pydub.effects.normalize(pydub.AudioSegment.from_mp3(io.BytesIO(audio))),
                 -20.0,
             ),
             alignment,
@@ -302,7 +311,7 @@ async def elevenlabs_tts(
     except httpx.RemoteProtocolError:
         logger.warning(f"Server disconnected during one ElevenLabs request, retrying")
 
-    return pydub.AudioSegment.from_mp3(io.BytesIO(r.content))  # type: ignore
+    return pydub.AudioSegment.from_mp3(io.BytesIO(r.content))
 
 
 def replace_sublist(
@@ -376,6 +385,9 @@ async def generate_voice_from_text(
         except ElevenLabsInputTimeoutExceededError as e:
             logger.warning(f"Mistiming of input text, retrying in 10s: {e}")
             await asyncio.sleep(10)
+        except ElevenLabsSomethingWentWrong as e:
+            logger.warning(f"Something went wrong, retrying in 10s: {e}")
+            await asyncio.sleep(10)
         except websockets.exceptions.ConnectionClosedError as e:
             logger.warning(
                 f"Websocket connection closed unexpectedly, trying again in 10s: {e}"
@@ -395,8 +407,8 @@ def text_to_spans(text: str | list[str]) -> list:
     ]
 
 
-def generate_error_manuscript(article_id: str) -> dict:
-    article_url = f"{WIKI_URL}/{article_id}"
+def generate_error_manuscript(article_id: str, scraping_url: str) -> dict:
+    article_url = f"{scraping_url}/{article_id}"
 
     res_dir = DB_DIR / ERROR_ID
     res_dir.mkdir(parents=True, exist_ok=True)
@@ -434,18 +446,89 @@ def generate_error_manuscript(article_id: str) -> dict:
                 ]
             )
         ],
+        "group": "info",
         "outro": {
             "audio_path": str((audio_dir / "outro.mp3").absolute()),
             "audio_url": "/" + str((audio_dir / "outro.mp3").relative_to(WEB_DIR)),
         },
     }
     if article_id != ERROR_ID:
-        article["url"] = f"{WIKI_URL}/{article_id}"
+        article["url"] = f"{scraping_url}/{article_id}"
     return article
 
 
-def generate_disallowed_manuscript(article_id: str) -> dict:
-    article_url = f"{WIKI_URL}/{article_id}"
+def generate_home_manuscript(audio_dir: pathlib.Path) -> dict:
+    return {
+        "title": "Empire Wikipedia Winds of Speech",
+        "url": None,
+        "state": "done",
+        "forced_voice": "Ella",
+        "sections": [
+            {
+                "section_type": "h1",
+                "audio_path": str((audio_dir / f"{0:04}.mp3").absolute()),
+                "audio_url": "/"
+                + str((audio_dir / f"{0:04}.mp3").relative_to(WEB_DIR)),
+                "alignment_path": str((audio_dir / f"{0:04}.json").absolute()),
+                "alignment_url": "/"
+                + str((audio_dir / f"{0:04}.json").relative_to(WEB_DIR)),
+                "spans": text_to_spans("Empire Wikipedia Winds of Speech"),
+            },
+            *[
+                {
+                    "section_type": "p",
+                    "audio_path": str((audio_dir / f"{i+1:04}.mp3").absolute()),
+                    "audio_url": "/"
+                    + str((audio_dir / f"{i+1:04}.mp3").relative_to(WEB_DIR)),
+                    "alignment_path": str((audio_dir / f"{i+1:04}.json").absolute()),
+                    "alignment_url": "/"
+                    + str((audio_dir / f"{i+1:04}.json").relative_to(WEB_DIR)),
+                    "spans": text_to_spans(text),
+                }
+                for i, text in enumerate(
+                    [
+                        "This is an unofficial text-to-speech tool to help better focus on and understand the articles on the Empire Wikipedia.",
+                        'It is pretty simple to use: When you find an article on the Empire Wikipedia you would like to listen to and read along with, add a "p" to the start of the URL. You\'ll then go directly to the text-to-speech article on this website (see the video clip below). If the article seems outdated, it may be because you are the first to visit it in a while, so please let the system update the article - this can take a bit.',
+                        "If you would rather listen to the articles as a podcast you can find buttons for various podcast websites on the right. Please contact me if you would like more to be added.",
+                    ]
+                )
+            ],
+            {
+                "section_type": "img",
+                "src": "img/tts.gif",
+                "alt": "A video clip illustrating how to access text-to-speech directly from the Empire Wikipedia.",
+                "spans": [],
+            },
+            *[
+                {
+                    "section_type": "p",
+                    "audio_path": str((audio_dir / f"{i+5:04}.mp3").absolute()),
+                    "audio_url": "/"
+                    + str((audio_dir / f"{i+5:04}.mp3").relative_to(WEB_DIR)),
+                    "alignment_path": str((audio_dir / f"{i+5:04}.json").absolute()),
+                    "alignment_url": "/"
+                    + str((audio_dir / f"{i+5:04}.json").relative_to(WEB_DIR)),
+                    "spans": text_to_spans(text),
+                }
+                for i, text in enumerate(
+                    [
+                        "The system was initially designed for personal use, but after making it publicly available, I've received some valuable suggestions. Some are now part of the accessibility settings in the left side burger menu; some have changed how articles are generated, shown, and read aloud; and some have changed the navigation buttons and sliders. Please share suggestions and any improvements you'd like to see - either by email (click the letter at the bottom right) or by finding me during out-of-character time at any of the Empire events (Bloodcrow Knott, Imperial Orcs).",
+                        "If you want to support me, you can buy me a coffee or beer in the field or donate by clicking the coffee cup on the bottom right.",
+                        "I hope this can help others who struggle as much with reading the Wikipedia as I have!",
+                    ]
+                )
+            ],
+        ],
+        "group": "info",
+        "outro": {
+            "audio_path": str((audio_dir / "outro.mp3").absolute()),
+            "audio_url": "/" + str((audio_dir / "outro.mp3").relative_to(WEB_DIR)),
+        },
+    }
+
+
+def generate_disallowed_manuscript(article_id: str, scraping_url: str) -> dict:
+    article_url = f"{scraping_url}/{article_id}"
 
     res_dir = DB_DIR / DISALLOWED_ID
     res_dir.mkdir(parents=True, exist_ok=True)
@@ -486,13 +569,14 @@ def generate_disallowed_manuscript(article_id: str) -> dict:
                 ]
             )
         ],
+        "group": "info",
         "outro": {
             "audio_path": str((audio_dir / "outro.mp3").absolute()),
             "audio_url": "/" + str((audio_dir / "outro.mp3").relative_to(WEB_DIR)),
         },
     }
     if article_id != DISALLOWED_ID:
-        article["url"] = f"{WIKI_URL}/{article_id}"
+        article["url"] = f"{scraping_url}/{article_id}"
     return article
 
 
@@ -559,9 +643,9 @@ def content_to_sections(
 
 
 def generate_manuscript(
-    article_id: str, res_dir: pathlib.Path, audio_dir: pathlib.Path
+    article_id: str, scraping_url: str, res_dir: pathlib.Path, audio_dir: pathlib.Path
 ) -> dict:
-    url = f"{WIKI_URL}/{article_id}"
+    url = f"{scraping_url}/{article_id}"
 
     if (
         any(
@@ -572,100 +656,39 @@ def generate_manuscript(
         and article_id not in ALLOWED_ACTIRLES
     ):
         logger.warning(f'"{article_id}" is disallowed')
-        return generate_disallowed_manuscript(article_id)
+        return generate_disallowed_manuscript(article_id, scraping_url)
 
     if article_id == HOME_ID:
-        return {
-            "title": "Empire Wikipedia Winds of Speech",
-            "url": None,
-            "state": "done",
-            "forced_voice": "Ella",
-            "sections": [
-                {
-                    "section_type": "h1",
-                    "audio_path": str((audio_dir / f"{0:04}.mp3").absolute()),
-                    "audio_url": "/"
-                    + str((audio_dir / f"{0:04}.mp3").relative_to(WEB_DIR)),
-                    "alignment_path": str((audio_dir / f"{0:04}.json").absolute()),
-                    "alignment_url": "/"
-                    + str((audio_dir / f"{0:04}.json").relative_to(WEB_DIR)),
-                    "spans": text_to_spans("Empire Wikipedia Winds of Speech"),
-                },
-                *[
-                    {
-                        "section_type": "p",
-                        "audio_path": str((audio_dir / f"{i+1:04}.mp3").absolute()),
-                        "audio_url": "/"
-                        + str((audio_dir / f"{i+1:04}.mp3").relative_to(WEB_DIR)),
-                        "alignment_path": str(
-                            (audio_dir / f"{i+1:04}.json").absolute()
-                        ),
-                        "alignment_url": "/"
-                        + str((audio_dir / f"{i+1:04}.json").relative_to(WEB_DIR)),
-                        "spans": text_to_spans(text),
-                    }
-                    for i, text in enumerate(
-                        [
-                            "Welcome to the unofficial Empire Wikipedia Winds of Speech!",
-                            "This is an unofficial text-to-speech tool to help better focus on and understand the articles on the Empire Wikipedia.",
-                            'It is pretty simple to use: When you find an article on the Empire Wikipedia you would like to listen to and read along with, add a "p" to the start of the URL. You\'ll then go directly to the text-to-speech article on this website (see the video clip below). If the article seems outdated, it may be because you are the first to visit it in a while, so please let the system update the article - this can take a bit.',
-                        ]
-                    )
-                ],
-                {
-                    "section_type": "img",
-                    "src": "img/tts.gif",
-                    "alt": "A video clip illustrating how to access text-to-speech directly from the Empire Wikipedia.",
-                    "spans": [],
-                },
-                *[
-                    {
-                        "section_type": "p",
-                        "audio_path": str((audio_dir / f"{i+5:04}.mp3").absolute()),
-                        "audio_url": "/"
-                        + str((audio_dir / f"{i+5:04}.mp3").relative_to(WEB_DIR)),
-                        "alignment_path": str(
-                            (audio_dir / f"{i+5:04}.json").absolute()
-                        ),
-                        "alignment_url": "/"
-                        + str((audio_dir / f"{i+5:04}.json").relative_to(WEB_DIR)),
-                        "spans": text_to_spans(text),
-                    }
-                    for i, text in enumerate(
-                        [
-                            "The system was initially designed for personal use, but after making it publicly available, I've received some valuable suggestions. Some are now part of the accessibility settings in the left side burger menu; some have changed how articles are generated, shown, and read aloud; and some have changed the navigation buttons and sliders. Please share suggestions and any improvements you'd like to see - either by email (click the letter at the bottom right) or by finding me during out-of-character time at any of the Empire events (Bloodcrow Knott, Imperial Orcs).",
-                            "If you want to support me, you can buy me a coffee or beer in the field or donate by clicking the coffee cup on the bottom right.",
-                            "I hope this can help others who struggle as much with reading the Wikipedia as I have!",
-                        ]
-                    )
-                ],
-            ],
-            "outro": {
-                "audio_path": str((audio_dir / "outro.mp3").absolute()),
-                "audio_url": "/" + str((audio_dir / "outro.mp3").relative_to(WEB_DIR)),
-            },
-        }
+        return generate_home_manuscript(audio_dir)
 
     try:
         response = httpx.get(url, verify=False, timeout=60)
     except Exception as e:
         logger.error(f'Could not get article "{url}": {e}')
-        return generate_error_manuscript(article_id)
+        return generate_error_manuscript(article_id, scraping_url)
 
     if not response.is_success:
         logger.error(f'Could not get article "{url}": {response}')
-        return generate_error_manuscript(article_id)
+        return generate_error_manuscript(article_id, scraping_url)
 
     soup = BeautifulSoup(response.text, "html.parser")
-    content = soup.find("div", {"id": "mw-content-text"})
+    content = soup.find(id="mw-content-text")
 
     if not isinstance(content, Tag):
         logger.error(f'Soup for "{url}" does not contain ID "mw-content-text"')
-        return generate_error_manuscript(article_id)
+        return generate_error_manuscript(article_id, scraping_url)
 
     # Get image
     img_tag = content.find("img")
     img_url = f"{PD_URL}{img_tag['src']}" if isinstance(img_tag, Tag) else None
+
+    # Get page categories
+    page_categories_soup = soup.find("div", {"id": "pageCategories"})
+    page_categories = (
+        [a.text for a in page_categories_soup.find_all("a")]
+        if isinstance(page_categories_soup, Tag)
+        else []
+    )
 
     while isinstance(content, Tag) and len(list(content.children)) == 1:
         content = list(content.children)[0]  # type: ignore
@@ -673,7 +696,7 @@ def generate_manuscript(
     title_tag = soup.find("h1")
     if not isinstance(title_tag, Tag):
         logger.error(f'Soup for "{url}" does not contain h1 header')
-        return generate_error_manuscript(article_id)
+        return generate_error_manuscript(article_id, scraping_url)
     title = title_tag.text.strip()
 
     toc = content.find("div", {"id": "toc"})
@@ -701,6 +724,13 @@ def generate_manuscript(
         "title": title,
         "url": url,
         "state": "generating",
+        "group": scraping_url,
+        "categories": page_categories,
+        "outro": {
+            "audio_path": str((audio_dir / "outro.mp3").absolute()),
+            "audio_url": "/" + str((audio_dir / "outro.mp3").relative_to(WEB_DIR)),
+        },
+        "created": datetime.datetime.now(),
         "sections": [
             {
                 "section_type": "h1",
@@ -714,10 +744,6 @@ def generate_manuscript(
             },
             *sections,
         ],
-        "outro": {
-            "audio_path": str((audio_dir / "outro.mp3").absolute()),
-            "audio_url": "/" + str((audio_dir / "outro.mp3").relative_to(WEB_DIR)),
-        },
     }
 
     # Add image
@@ -730,47 +756,70 @@ def generate_complete_audio(article_id: str) -> None:
     article_id = article_id.replace(" ", "_")
     manuscript = COLLECTION.find_one({"_id": article_id})
     sound = None
-    if manuscript and manuscript["state"] != "generating":
-        for section in manuscript["sections"]:
-            if section["section_type"] not in SECTION_TYPE_SKIP:
-                if sound:
-                    if section["section_type"] not in SECTION_TYPE_PRE_DELAY:
-                        logger.warning(
-                            f'"{section["section_type"]}" not in SECTION_TYPE_PRE_DELAY! Using default 1s'
-                        )
-                        sound = sound.append(
-                            pydub.AudioSegment.silent(duration=1000), crossfade=0
-                        )
-                    else:
-                        sound = sound.append(
-                            pydub.AudioSegment.silent(
-                                duration=SECTION_TYPE_PRE_DELAY[section["section_type"]]
-                                * 1000
-                            ),
-                            crossfade=0,
-                        )
+    transcript = []
+    if not manuscript:
+        logger.warning(f'Could not find "{article_id}"')
+        return
+    if manuscript["state"] == "generating":
+        logger.warning(
+            f'Could not generate complete audio for "{article_id}" as it is still generating'
+        )
+        return
+
+    logger.info(f'Generating complete audio file for "{manuscript["title"]}"')
+    for section in manuscript["sections"]:
+        if section["section_type"] not in SECTION_TYPE_SKIP:
+            if sound:
+                if section["section_type"] not in SECTION_TYPE_PRE_DELAY:
+                    logger.warning(
+                        f'"{section["section_type"]}" not in SECTION_TYPE_PRE_DELAY! Using default 1s'
+                    )
+                    sound = sound.append(
+                        pydub.AudioSegment.silent(duration=1000), crossfade=0
+                    )
                 else:
-                    sound = pydub.AudioSegment.silent(duration=0)
+                    sound = sound.append(
+                        pydub.AudioSegment.silent(
+                            duration=int(
+                                SECTION_TYPE_PRE_DELAY[section["section_type"]] * 1000
+                            )
+                        ),
+                        crossfade=0,
+                    )
+            else:
+                sound = pydub.AudioSegment.silent(duration=0)
 
-                sound = sound.append(
-                    pydub.AudioSegment.from_mp3(section["audio_path"]), crossfade=0
-                )
-
-    else:
-        raise Exception(f"Article not yet generated!")
+            transcript.append(
+                {
+                    "type": section["section_type"],
+                    "body": " ".join(s["text"] for s in section["spans"]),
+                    "startTime": len(sound) / 1000,
+                }
+            )
+            sound = sound.append(
+                pydub.AudioSegment.from_mp3(section["audio_path"]), crossfade=0
+            )
 
     if not sound:
         logger.error(f'No sections in "{article_id}"!')
         return
 
     if "outro" in manuscript and "audio_path" in manuscript["outro"]:
-        sound.append(
+        sound = sound.append(
             pydub.AudioSegment.silent(duration=OUTRO_PRE_DELAY * 1000), crossfade=0
         )
-        sound.append(
+        sound = sound.append(
             pydub.AudioSegment.from_mp3(manuscript["outro"]["audio_path"]),
             crossfade=0,
         )
+    else:
+        logger.warning(
+            f'"{manuscript["title"]}" has no "outro" or "outro" has no "audio_path"'
+        )
+
+    sound = sound.append(
+        pydub.AudioSegment.silent(duration=OUTRO_POST_SILENCE * 1000), crossfade=0
+    )
 
     res_dir = DB_DIR / article_id
     res_dir.mkdir(parents=True, exist_ok=True)
@@ -787,9 +836,11 @@ def generate_complete_audio(article_id: str) -> None:
             "$set": {
                 "complete_audio_path": str(audio_path.absolute()),
                 "complete_audio_url": f"/{audio_path.relative_to(WEB_DIR)}",
+                "transcript": transcript,
             }
         },
     )
+    logger.info(f'Complete audio file generated for "{manuscript["title"]}"')
 
 
 def generate_audio(manuscript: dict, task: str) -> None:
@@ -802,8 +853,9 @@ def generate_audio(manuscript: dict, task: str) -> None:
             logger.warning(
                 f'Forced voice "{manuscript["forced_voice"]}" does not exist in config, please add'
             )
-
-    logger.info(f'Chose voice "{voice["name"]}" for "{manuscript["title"]}"')
+        logger.info(f'Chose forced voice "{voice["name"]}" for "{manuscript["title"]}"')
+    else:
+        logger.info(f'Chose voice "{voice["name"]}" for "{manuscript["title"]}"')
 
     for i, section in enumerate(manuscript["sections"]):
         COLLECTION.update_one(
@@ -857,9 +909,7 @@ def update_manuscript(manuscript: dict, task: str = "Updating manuscript") -> No
     manuscript["lastmod"] = datetime.datetime.now()
     insert_or_replace(manuscript)
 
-    logger.info(f'Generating complete audio file for "{manuscript["title"]}"')
     generate_complete_audio(manuscript["_id"])
-    logger.info(f'Complete audio file generated for "{manuscript["title"]}"')
 
 
 def get_article(article_id: str) -> typing.Any:
@@ -871,7 +921,7 @@ def get_article(article_id: str) -> typing.Any:
 
 def article_processor(queue: multiprocessing.Queue) -> None:
     while True:
-        article_id = queue.get(block=True, timeout=None)
+        article_id, scraping_url = queue.get(block=True, timeout=None)
 
         logger.info(
             f'Processing "{article_id}" ({queue.qsize()} articles left in queue)'
@@ -891,23 +941,48 @@ def article_processor(queue: multiprocessing.Queue) -> None:
         try:
             manuscript = {
                 "_id": article_id,
-                **generate_manuscript(article_id, res_dir, audio_dir),
+                **generate_manuscript(article_id, scraping_url, res_dir, audio_dir),
             }
 
             if manuscript["state"] == "disallowed":
                 manuscript["lastmod"] = datetime.datetime.now()
                 insert_or_replace(manuscript)
-                queue.put(DISALLOWED_ID)
+                queue.put((DISALLOWED_ID, scraping_url))
                 continue
             elif manuscript["state"] == "error":
                 manuscript["lastmod"] = datetime.datetime.now()
                 insert_or_replace(manuscript)
-                queue.put(ERROR_ID)
+                queue.put((ERROR_ID, scraping_url))
                 continue
 
             existing_manuscript = COLLECTION.find_one({"_id": article_id})
 
+            # # ================= TMP =================
+            # if (
+            #     manuscript
+            #     and existing_manuscript
+            #     and "categories" in manuscript
+            #     and "categories" not in existing_manuscript
+            # ):
+            #     COLLECTION.update_one(
+            #         {"_id": existing_manuscript["_id"]},
+            #         {
+            #             "$set": {
+            #                 "categories": manuscript["categories"],
+            #             }
+            #         },
+            #     )
+            # # ================= TMP =================
+
             if existing_manuscript is not None:
+                if "created" in existing_manuscript:
+                    manuscript["created"] = existing_manuscript["created"]
+                elif "lastmod" in existing_manuscript:
+                    manuscript["created"] = existing_manuscript["lastmod"]
+
+                if "forced_voice" in existing_manuscript:
+                    manuscript["forced_voice"] = existing_manuscript["forced_voice"]
+
                 if manuscript["_id"] in ALWAYS_UPDATE:
                     logger.warning(
                         f'Article "{manuscript["title"]}" ({manuscript["_id"]}) in "always update", updating manuscript'
@@ -952,7 +1027,7 @@ def article_processor(queue: multiprocessing.Queue) -> None:
         if (
             (a := COLLECTION.find_one({"_id": article_id}))
             and isinstance(a, dict)
-            and "complete_audio_url" not in a
+            and ("complete_audio_url" not in a or "transcript" not in a)
         ):
             try:
                 generate_complete_audio(manuscript["_id"])
@@ -1047,9 +1122,9 @@ def home() -> FileResponse:
 
 
 @app.get("/api/manuscript/{article_id:path}")
-def manuscript(article_id: str) -> typing.Any:
+def manuscript(article_id: str, scraping_url: str = WIKI_URL) -> typing.Any:
     manuscript = get_article(article_id)
-    article_queue.put(article_id)
+    article_queue.put((article_id, scraping_url))
     if manuscript is not None:
         return manuscript
     else:
@@ -1058,7 +1133,7 @@ def manuscript(article_id: str) -> typing.Any:
                 "_id": article_id,
                 "progress": 0.0,
                 "title": article_id,
-                "url": f"{WIKI_URL}/{article_id}",
+                "url": f"{scraping_url}/{article_id}",
                 "state": "generating",
                 "sections": [
                     {
@@ -1082,7 +1157,7 @@ def manuscript(article_id: str) -> typing.Any:
         )
         return {
             "title": article_id,
-            "url": f"{WIKI_URL}/{article_id}",
+            "url": f"{scraping_url}/{article_id}",
             "state": "generating",
             "sections": [
                 {
