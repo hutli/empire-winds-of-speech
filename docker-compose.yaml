@@ -1,20 +1,87 @@
 version: "3"
 
 services:
-  auto-winds:
-    build: .
+  winds-of-speech:
+    build:
+      context: .
+      dockerfile: main.Dockerfile
     environment:
       GENERATE_ARTICLES: "yes"
       # REFRESH_ARTICLES: "yes"
       MONGODB_DOMAIN: "mongodb"
-      VOICES_JSON: "config/elevenlabs0.json"
+      VOICES_JSON: "config/elevenlabs.json"
+      SAFE_QUOTA_MARGIN: 200
     ports:
       - 127.0.0.1:4010:80
     volumes:
-      - ./db:/app/web/db/
+      - ./web:/app/web
+      - ./db:/app/web/db
       - ./config:/app/config
     networks:
-      - auto-winds
+      - winds-of-speech
+    depends_on:
+      - mongodb
+    tty: true
+    logging:
+      options:
+        max-size: "100m"
+
+  winds-of-speech-podcast:
+    build:
+      context: .
+      dockerfile: podcast.Dockerfile
+    environment:
+      NAME: "Empire Winds of Speech"
+      DESCRIPTION: "Listen to the articles of the Empire Wikipedia."
+      AUTHOR: '{"name": "Profound Decisions", "email": "admin@profounddecisions.co.uk", "href": "https://www.profounddecisions.co.uk", "img": "https://www.profounddecisions.co.uk/resources/images/logos/empire.png"}'
+      CATEGORY: '["Leisure", "Hobbies"]'
+      LANGUAGE: "en-gb"
+      OWNER: '{"name": "Jens (Bloodcrow Knott)", "email": "admin@pprofounddecisions.co.uk", "href": "https://pprofounddecisions.co.uk", "img": "https://pprofounddecisions.co.uk/img/Ophis-inv.png"}'
+      URL: https://podcast.pprofounddecisions.co.uk
+      EPISODE_URL: https://podcast.pprofounddecisions.co.uk
+      WEB: https://pprofounddecisions.co.uk
+      ART: https://pprofounddecisions.co.uk/img/Ophis-inv.png
+      EPISODE_LINK_BASE: https://pprofounddecisions.co.uk/empire-wiki/
+      MONGODB_DOMAIN: "mongodb"
+      MANUSCRIPT_FILTER_GROUP: "https://www.profounddecisions.co.uk/empire-wiki"
+      MANUSCRIPT_FULL_TYPE_CATEGORY: "Recent history"
+      CHAPTER_SEGMENT_TYPE: "h2"
+    ports:
+      - 127.0.0.1:4020:80
+    volumes:
+      - ./db:/app/web/db/
+    networks:
+      - winds-of-speech
+    depends_on:
+      - mongodb
+    tty: true
+
+  winds-of-speech-podcast-recent-history:
+    build:
+      context: .
+      dockerfile: podcast.Dockerfile
+    environment:
+      NAME: "Empire Winds of Speech - Recent History"
+      DESCRIPTION: "Listen to the latest articles about current activities in the Empire, as they are released."
+      AUTHOR: '{"name": "Profound Decisions", "email": "admin@profounddecisions.co.uk", "href": "https://www.profounddecisions.co.uk", "img": "https://www.profounddecisions.co.uk/resources/images/logos/empire.png"}'
+      CATEGORY: '["Leisure", "Hobbies"]'
+      LANGUAGE: "en-gb"
+      OWNER: '{"name": "Jens (Bloodcrow Knott)", "email": "admin@pprofounddecisions.co.uk", "href": "https://pprofounddecisions.co.uk", "img": "https://pprofounddecisions.co.uk/img/Ophis-inv.png"}'
+      URL: https://recent-history.podcast.pprofounddecisions.co.uk
+      EPISODE_URL: https://podcast.pprofounddecisions.co.uk
+      WEB: https://pprofounddecisions.co.uk
+      ART: https://pprofounddecisions.co.uk/img/Sular-inv.png
+      EPISODE_LINK_BASE: https://pprofounddecisions.co.uk/empire-wiki/
+      MONGODB_DOMAIN: "mongodb"
+      MANUSCRIPT_FILTER_GROUP: "https://www.profounddecisions.co.uk/empire-wiki"
+      MANUSCRIPT_FILTER_CATEGORY: "Recent history"
+      CHAPTER_SEGMENT_TYPE: "h2"
+    ports:
+      - 127.0.0.1:4021:80
+    volumes:
+      - ./db:/app/web/db/
+    networks:
+      - winds-of-speech
     depends_on:
       - mongodb
     tty: true
@@ -26,11 +93,11 @@ services:
     expose:
       - 27017
     volumes:
-      - auto-winds:/data/db
+      - winds-of-speech:/data/db
     networks:
-      - auto-winds
+      - winds-of-speech
 
 volumes:
-  auto-winds:
+  winds-of-speech:
 networks:
-  auto-winds:
+  winds-of-speech:

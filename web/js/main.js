@@ -299,41 +299,38 @@ function updateMeta(manuscript) {
 // MAIN
 let params = new URLSearchParams(document.location.search);
 let p_name = params.get("name");
+let p_scraping_url = params.get("scraping_url");
+let p_path = params.get("path");
+
 if (!p_name) {
   p_name = location.pathname.split("/").slice(-1)[0];
 }
 
-if (p_name) {
-  fetch(`/api/manuscript/${p_name}`).then((response) => {
-    if (response.status == 200) {
-      response.json().then((manuscript) => {
-        updateMeta(manuscript);
-        if (manuscript.complete_audio_url) {
-          let download_btn = document.getElementById("download-btn");
-          download_btn.href = manuscript.complete_audio_url;
-          download_btn.download = `${manuscript["_id"]}.mp3`;
-          download_btn.classList.remove("download-button-hidden");
-        }
-        populateManuscriptContent(manuscript);
-      });
-    } else {
-      console.error(response);
-    }
-  });
-} else {
-  fetch(`/api/manuscript/`).then((response) => {
-    if (response.status == 200) {
-      response.json().then((manuscript) => {
-        if (manuscript.complete_audio_url) {
-          let download_btn = document.getElementById("download-btn");
-          download_btn.href = manuscript.complete_audio_url;
-          download_btn.download = `${manuscript["_id"]}.mp3`;
-          download_btn.classList.remove("download-button-hidden");
-        }
-        populateManuscriptContent(manuscript);
-      });
-    } else {
-      console.error(response);
-    }
-  });
+if (!p_path || !p_name) {
+  p_path = "/api/manuscript";
 }
+let url =
+  `${p_path}/${p_name}` +
+  (p_scraping_url ? `?scraping_url=${p_scraping_url}` : "");
+
+console.log(p_scraping_url);
+console.log(p_name);
+console.log(p_path);
+console.log(url);
+
+fetch(url).then((response) => {
+  if (response.status == 200) {
+    response.json().then((manuscript) => {
+      updateMeta(manuscript);
+      if (manuscript.complete_audio_url) {
+        let download_btn = document.getElementById("download-btn");
+        download_btn.href = manuscript.complete_audio_url;
+        download_btn.download = `${manuscript["_id"]}.mp3`;
+        download_btn.classList.remove("download-button-hidden");
+      }
+      populateManuscriptContent(manuscript);
+    });
+  } else {
+    console.error(response);
+  }
+});

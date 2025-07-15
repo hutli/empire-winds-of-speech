@@ -1,0 +1,117 @@
+[
+  {
+    "id": "RILOU7YmBhvwJGDGjNmP",
+    "nickname": "Jane",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "NNl6r8mD7vthiJatiJt1",
+    "nickname": "Bradford",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "rCmVtv8cYU60uhlsOo1M",
+    "nickname": "Ana",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "ZF6FPAbjXT4488VcRRnw",
+    "nickname": "Amelia",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "JBFqnCBsd6RMkjVDRZzb",
+    "nickname": "George",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "G7ILShrCNLfmS0A37SXS",
+    "nickname": "Sam",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "RKCbSROXui75bk1SVpy8",
+    "nickname": "Shaun",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "u8GDilEiJPUbRk87Lcqs",
+    "nickname": "Daniel",
+    "use": true,
+    "model": "eleven_multilingual_v2"
+  },
+
+  {
+    "id": ["4XE3NCLHaa7DuKj26i7A", "gcgATH9maP3HG8oRh9Pn"],
+    "nickname": "Victoria",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": ["tMLKvm2fOjcWlM1D1tdE", "dSyhAGzx7MQxt2TTKuQN"],
+    "nickname": "Ella",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "goT3UYdM9bhm0n2lmKQx",
+    "nickname": "Edward",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "52f6C7EAokdmkjSn6Mk8",
+    "nickname": "Emily",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "NFG5qt843uXKj4pFvR7C",
+    "nickname": "Adam Stone",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "Se2Vw1WbHmGbBbyWTuu4",
+    "nickname": "Allison",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "ThT5KcBeYPX3keUQqHPh",
+    "nickname": "Dorothy",
+    "use": false,
+    "model": "eleven_multilingual_v1"
+  },
+  {
+    "id": "D38z5RcWu1voky8WS1ja",
+    "nickname": "Fin",
+    "use": false,
+    "model": "eleven_multilingual_v1"
+  },
+  {
+    "id": "EcHSoedtfJImoYjBrw5Y",
+    "nickname": "Valentino",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "2gsckjDZMXaH4J35vAgt",
+    "nickname": "Brian",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  },
+  {
+    "id": "LgGXqiXAgeWadT5JmJWB",
+    "nickname": "Knightley",
+    "use": false,
+    "model": "eleven_multilingual_v2"
+  }
+]

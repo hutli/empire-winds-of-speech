@@ -1,8 +1,13 @@
+audioop-lts
 beautifulsoup4
 fastapi
 httpx
 loguru
+markdownify
+mutagen
 mypy
+pod2gen
+pyaudio
 pydub
 pydub-stubs
 pymongo
@@ -10,6 +15,7 @@ python-dotenv
 regex
 tqdm
 types-beautifulsoup4
+types-python-dateutil
 types-regex
 uvicorn
 websockets

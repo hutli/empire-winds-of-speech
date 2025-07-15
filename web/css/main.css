@@ -87,7 +87,7 @@ span {
   color: var(--text-colour);
   box-shadow: 0 0 0 3px rgba(32, 33, 36, 0);
 }
-img {
+#article-content img {
   width: -webkit-fill-available;
   margin: 0 20px;
 }
@@ -231,6 +231,9 @@ footer {
 }
 footer a {
   text-decoration: none;
+}
+footer * {
+  width: 20px;
 }
 
 .fas {
