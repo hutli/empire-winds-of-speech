@@ -2,8 +2,8 @@ import asyncio
 import base64
 import datetime
 import http
-import io
 import json
+import logging
 import multiprocessing
 import os
 import pathlib
@@ -19,6 +19,7 @@ import fastapi
 import fastapi.responses
 import fastapi.staticfiles
 import httpx
+import pydantic
 import pydub
 import pymongo
 import regex
@@ -28,9 +29,11 @@ import websockets
 from loguru import logger
 from pydantic.dataclasses import dataclass
 
-CONFIG_DIR = pathlib.Path("config")
-WEB_DIR = pathlib.Path("web")
-DB_DIR = WEB_DIR / "db"
+from .utils import url_to_path
+
+CONFIG_DIR = pathlib.Path(os.environ["CONFIG_DIR"])
+WEB_DIR = pathlib.Path(os.environ["WEB_DIR"])
+DB_DIR = pathlib.Path(os.environ["DB_DIR"])
 
 dotenv.load_dotenv(CONFIG_DIR / ".env")
 
@@ -160,8 +163,7 @@ class ELVoice:
     # generation_config: ELGenerationConfig | None = None
 
 
-@dataclass
-class APIKey:
+class APIKey(pydantic.BaseModel):
     username: str
     key: str
     use: bool
@@ -224,8 +226,7 @@ def match_target_amplitude(
 
 
 def my_url(url: str) -> str:
-    url = url.split("#")[0]
-    url = url.replace("?", "%3F")
+    url = url.split("#")[0].replace("?", "%3F")
     return url
 
 
@@ -471,7 +472,7 @@ async def generate_voice_from_text(
             api_keys[API_KEY_POINTER].use = False
 
             json.dump(
-                api_keys,
+                [k.model_dump() for k in api_keys],
                 open(ELEVENLABS_API_KEYS_JSON, "w"),
                 indent=4,
             )
@@ -502,9 +503,7 @@ def generate_error_manuscript(article_id: str, scraping_url: str) -> dict:
         "sections": [
             {
                 "section_type": "h1",
-                "audio_path": str((audio_dir / f"{0:04}.mp3").absolute()),
                 "audio_url": f'/{((audio_dir / f"{0:04}.mp3").relative_to(DB_DIR.parent))}',
-                "alignment_path": str((audio_dir / f"{0:04}.json").absolute()),
                 "alignment_url": f'/{((audio_dir / f"{0:04}.json").relative_to(DB_DIR.parent))}',
                 "spans": text_to_spans("Error"),
             }
@@ -512,9 +511,7 @@ def generate_error_manuscript(article_id: str, scraping_url: str) -> dict:
         + [
             {
                 "section_type": "p",
-                "audio_path": str((audio_dir / f"{i+1:04}.mp3").absolute()),
                 "audio_url": f'/{((audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent))}',
-                "alignment_path": str((audio_dir / f"{i+1:04}.json").absolute()),
                 "alignment_url": f'/{((audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent))}',
                 "spans": text_to_spans(s),
             }
@@ -526,9 +523,7 @@ def generate_error_manuscript(article_id: str, scraping_url: str) -> dict:
         ],
         "group": "info",
         "outro": {
-            "audio_path": str((audio_dir / "outro.mp3").absolute()),
-            "audio_url": "/"
-            + str((audio_dir / "outro.mp3").relative_to(DB_DIR.parent)),
+            "audio_url": f"/{(audio_dir / "outro.mp3").relative_to(DB_DIR.parent)}",
         },
     }
     if article_id != ERROR_ID:
@@ -545,23 +540,15 @@ def generate_home_manuscript(audio_dir: pathlib.Path) -> dict:
         "sections": [
             {
                 "section_type": "h1",
-                "audio_path": str((audio_dir / f"{0:04}.mp3").absolute()),
-                "audio_url": "/"
-                + str((audio_dir / f"{0:04}.mp3").relative_to(DB_DIR.parent)),
-                "alignment_path": str((audio_dir / f"{0:04}.json").absolute()),
-                "alignment_url": "/"
-                + str((audio_dir / f"{0:04}.json").relative_to(DB_DIR.parent)),
+                "audio_url": f"/{(audio_dir / f"{0:04}.mp3").relative_to(DB_DIR.parent)}",
+                "alignment_url": f"/{(audio_dir / f"{0:04}.json").relative_to(DB_DIR.parent)}",
                 "spans": text_to_spans("Empire Wikipedia Winds of Speech"),
             },
             *[
                 {
                     "section_type": "p",
-                    "audio_path": str((audio_dir / f"{i+1:04}.mp3").absolute()),
-                    "audio_url": "/"
-                    + str((audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent)),
-                    "alignment_path": str((audio_dir / f"{i+1:04}.json").absolute()),
-                    "alignment_url": "/"
-                    + str((audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent)),
+                    "audio_url": f"/{(audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent)}",
+                    "alignment_url": f"/{(audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent)}",
                     "spans": text_to_spans(text),
                 }
                 for i, text in enumerate(
@@ -581,12 +568,8 @@ def generate_home_manuscript(audio_dir: pathlib.Path) -> dict:
             *[
                 {
                     "section_type": "p",
-                    "audio_path": str((audio_dir / f"{i+5:04}.mp3").absolute()),
-                    "audio_url": "/"
-                    + str((audio_dir / f"{i+5:04}.mp3").relative_to(DB_DIR.parent)),
-                    "alignment_path": str((audio_dir / f"{i+5:04}.json").absolute()),
-                    "alignment_url": "/"
-                    + str((audio_dir / f"{i+5:04}.json").relative_to(DB_DIR.parent)),
+                    "audio_url": f"/{(audio_dir / f"{i+5:04}.mp3").relative_to(DB_DIR.parent)}",
+                    "alignment_url": f"/{(audio_dir / f"{i+5:04}.json").relative_to(DB_DIR.parent)}",
                     "spans": text_to_spans(text),
                 }
                 for i, text in enumerate(
@@ -600,9 +583,7 @@ def generate_home_manuscript(audio_dir: pathlib.Path) -> dict:
         ],
         "group": "info",
         "outro": {
-            "audio_path": str((audio_dir / "outro.mp3").absolute()),
-            "audio_url": "/"
-            + str((audio_dir / "outro.mp3").relative_to(DB_DIR.parent)),
+            "audio_url": f"/{(audio_dir / "outro.mp3").relative_to(DB_DIR.parent)}",
         },
     }
 
@@ -620,24 +601,19 @@ def generate_disallowed_manuscript(article_id: str, scraping_url: str) -> dict:
         "title": article_id.replace("_", " "),
         "url": None,
         "state": "disallowed" if article_id != DISALLOWED_ID else "done",
-        # "forced_voice": "Ella",
         "sections": [
             {
                 "section_type": "h1",
-                "audio_path": str((audio_dir / f"{0:04}.mp3").absolute()),
-                "audio_url": f'/{((audio_dir / f"{0:04}.mp3").relative_to(DB_DIR.parent))}',
-                "alignment_path": str((audio_dir / f"{0:04}.json").absolute()),
-                "alignment_url": f'/{((audio_dir / f"{0:04}.json").relative_to(DB_DIR.parent))}',
+                "audio_url": f"/{((audio_dir / f"{0:04}.mp3").relative_to(DB_DIR.parent))}",
+                "alignment_url": f"/{((audio_dir / f"{0:04}.json").relative_to(DB_DIR.parent))}",
                 "spans": text_to_spans("Disallowed article"),
             }
         ]
         + [
             {
                 "section_type": "p",
-                "audio_path": str((audio_dir / f"{i+1:04}.mp3").absolute()),
-                "audio_url": f'/{((audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent))}',
-                "alignment_path": str((audio_dir / f"{i+1:04}.json").absolute()),
-                "alignment_url": f'/{((audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent))}',
+                "audio_url": f"/{((audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent))}",
+                "alignment_url": f"/{((audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent))}",
                 "spans": text_to_spans(s),
             }
             for i, s in enumerate(
@@ -651,9 +627,7 @@ def generate_disallowed_manuscript(article_id: str, scraping_url: str) -> dict:
         ],
         "group": "info",
         "outro": {
-            "audio_path": str((audio_dir / "outro.mp3").absolute()),
-            "audio_url": "/"
-            + str((audio_dir / "outro.mp3").relative_to(DB_DIR.parent)),
+            "audio_url": f"/{(audio_dir / "outro.mp3").relative_to(DB_DIR.parent)}"
         },
     }
     if article_id != DISALLOWED_ID:
@@ -695,19 +669,11 @@ def content_to_sections(
                 if block := c.strip():
                     yield {
                         "section_type": "cite",
-                        "audio_path": str((audio_dir / f"{i+1:04}.mp3").absolute()),
                         "audio_url": my_url(
-                            "/"
-                            + str(
-                                (audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent)
-                            )
+                            f"/{(audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent)}"
                         ),
-                        "alignment_path": str(
-                            (audio_dir / f"{i+1:04}.json").absolute()
-                        ),
-                        "alignment_url": "/"
-                        + str(
-                            (audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent)
+                        "alignment_url": my_url(
+                            f"/{(audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent)}"
                         ),
                         "spans": text_to_spans(block),
                     }
@@ -718,13 +684,12 @@ def content_to_sections(
         if text:
             yield {
                 "section_type": child.name,
-                "audio_path": str((audio_dir / f"{i+1:04}.mp3").absolute()),
                 "audio_url": my_url(
-                    "/" + str((audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent))
+                    f"/{(audio_dir / f"{i+1:04}.mp3").relative_to(DB_DIR.parent)}"
                 ),
-                "alignment_path": str((audio_dir / f"{i+1:04}.json").absolute()),
-                "alignment_url": "/"
-                + str((audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent)),
+                "alignment_url": my_url(
+                    f"/{(audio_dir / f"{i+1:04}.json").relative_to(DB_DIR.parent)}"
+                ),
                 "spans": text_to_spans(text),
             }
             i += 1
@@ -734,7 +699,7 @@ def get_api_revisions(
     article_id: str, rvlimit: int = 500, rvstart: str | None = None
 ) -> list:
     url = (
-        f"{API_URL}?action=query&prop=revisions&format=json&titles={urllib.parse.quote(article_id)}"
+        f"{API_URL}?action=query&prop=revisions&format=json&titles={my_url(article_id)}"
         + (f"&rvlimit={rvlimit}" if rvlimit else "")
         + (f"&rvstart={urllib.parse.quote(rvstart)}" if rvstart else "")
     )
@@ -849,9 +814,8 @@ def generate_manuscript(
         "group": scraping_url,
         "categories": page_categories,
         "outro": {
-            "audio_path": str((audio_dir / "outro.mp3").absolute()),
             "audio_url": my_url(
-                "/" + str((audio_dir / "outro.mp3").relative_to(DB_DIR.parent))
+                f"/{(audio_dir / "outro.mp3").relative_to(DB_DIR.parent)}"
             ),
         },
         "lastmod": (
@@ -867,13 +831,12 @@ def generate_manuscript(
         "sections": [
             {
                 "section_type": "h1",
-                "audio_path": str((audio_dir / f"{0:04}.mp3").absolute()),
                 "audio_url": my_url(
-                    "/" + str((audio_dir / f"{0:04}.mp3").relative_to(DB_DIR.parent))
+                    f"/{(audio_dir / f"{0:04}.mp3").relative_to(DB_DIR.parent)}"
                 ),
-                "alignment_path": str((audio_dir / f"{0:04}.json").absolute()),
-                "alignment_url": "/"
-                + str((audio_dir / f"{0:04}.json").relative_to(DB_DIR.parent)),
+                "alignment_url": my_url(
+                    f"/{(audio_dir / f"{0:04}.json").relative_to(DB_DIR.parent)}"
+                ),
                 "spans": text_to_spans(title),
             },
             *sections,
@@ -888,6 +851,7 @@ def generate_manuscript(
 
 def generate_complete_audio(article_id: str) -> None:
     article_id = article_id.replace(" ", "_")
+
     manuscript = COLLECTION.find_one({"_id": article_id})
     sound = None
     transcript = []
@@ -900,7 +864,6 @@ def generate_complete_audio(article_id: str) -> None:
         )
         return
 
-    logger.info(f'Generating complete audio file for "{manuscript["title"]}"')
     for section in manuscript["sections"]:
         if section["section_type"] not in SECTION_TYPE_SKIP:
             if sound:
@@ -932,7 +895,9 @@ def generate_complete_audio(article_id: str) -> None:
                 }
             )
             sound = sound.append(
-                pydub.AudioSegment.from_file(section["audio_path"], format="mp3"),
+                pydub.AudioSegment.from_file(
+                    url_to_path(section["audio_url"]), format="mp3"
+                ),
                 crossfade=0,
             )
 
@@ -940,29 +905,26 @@ def generate_complete_audio(article_id: str) -> None:
         logger.error(f'No sections in "{article_id}"!')
         return
 
-    if "outro" in manuscript and "audio_path" in manuscript["outro"]:
+    if "outro" in manuscript and "audio_url" in manuscript["outro"]:
         sound = sound.append(
             pydub.AudioSegment.silent(duration=OUTRO_PRE_DELAY * 1000), crossfade=0
         )
         sound = sound.append(
             pydub.AudioSegment.from_file(
-                manuscript["outro"]["audio_path"], format="mp3"
+                url_to_path(manuscript["outro"]["audio_url"]), format="mp3"
             ),
             crossfade=0,
         )
     else:
         logger.warning(
-            f'"{manuscript["title"]}" has no "outro" or "outro" has no "audio_path"'
+            f'"{manuscript["title"]}" has no "outro" or "outro" has no "audio_url"'
         )
 
     sound = sound.append(
         pydub.AudioSegment.silent(duration=OUTRO_POST_SILENCE * 1000), crossfade=0
     )
 
-    res_dir = DB_DIR / article_id
-    res_dir.mkdir(parents=True, exist_ok=True)
-
-    audio_dir = res_dir / AUDIO_DIR_NAME
+    audio_dir = DB_DIR / article_id / AUDIO_DIR_NAME
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     audio_path = audio_dir / f"{article_id}.mp3"
@@ -972,7 +934,6 @@ def generate_complete_audio(article_id: str) -> None:
         {"_id": manuscript["_id"]},
         {
             "$set": {
-                "complete_audio_path": str(audio_path.absolute()),
                 "complete_audio_url": my_url(
                     f"/{audio_path.relative_to(DB_DIR.parent)}"
                 ),
@@ -980,7 +941,7 @@ def generate_complete_audio(article_id: str) -> None:
             }
         },
     )
-    logger.info(f'Complete audio file generated for "{manuscript["title"]}"')
+    logger.info(f'Complete audio done for "{manuscript["title"]}"')
 
 
 def generate_audio(manuscript: dict, task: str, api_keys: list[APIKey]) -> None:
@@ -1042,18 +1003,14 @@ def generate_audio(manuscript: dict, task: str, api_keys: list[APIKey]) -> None:
                     )
 
             audio.export(
-                section["audio_path"],
+                url_to_path(section["audio_url"]),
                 bitrate=f"{ELEVENLABS_BITRATE//1000}k",
                 format="mp3",
             )
-            json.dump(alignment, open(section["alignment_path"], "w"))
-            logger.info(
-                f'{i}/{len(manuscript["sections"])-1} TTS audio segments generated for "{manuscript["title"]}"'
-            )
+            json.dump(alignment, open(url_to_path(section["alignment_url"]), "w"))
+            logger.info(f'"{manuscript["title"]}" {i}/{len(manuscript["sections"])-1}')
         else:
-            logger.info(
-                f'{i}/{len(manuscript["sections"])-1} TTS audio segments generated for "{manuscript["title"]}"'
-            )
+            logger.info(f'"{manuscript["title"]}" {i}/{len(manuscript["sections"])-1}')
     audio, _ = asyncio.run(
         generate_voice_from_text(
             f'This article was read aloud by the artificial voice, "{voice.nickname}".'
@@ -1068,11 +1025,11 @@ def generate_audio(manuscript: dict, task: str, api_keys: list[APIKey]) -> None:
         )
     )
     audio.export(
-        manuscript["outro"]["audio_path"],
+        url_to_path(manuscript["outro"]["audio_url"]),
         bitrate=f"{ELEVENLABS_BITRATE//1000}k",
         format="mp3",
     )
-    logger.info(f'All TTS audio segments generated for "{manuscript["title"]}"')
+    logger.info(f'All TTS segments done for "{manuscript["title"]}"')
 
 
 def insert_or_replace(manuscript: dict) -> None:
@@ -1107,8 +1064,12 @@ def get_article(article_id: str) -> typing.Any:
 
 
 def tmp_morph(section: dict) -> dict:
-    section["audio_url"] = my_url(section["audio_url"])
-    section["alignment_url"] = my_url(section["alignment_url"])
+    # section["audio_url"] = my_url(section["audio_url"])
+    # section["alignment_url"] = my_url(section["alignment_url"])
+    if "audio_path" in section:
+        del section["audio_path"]
+    if "alignment_path" in section:
+        del section["alignment_path"]
     return section
 
 
@@ -1150,25 +1111,20 @@ def article_processor(queue: multiprocessing.Queue) -> None:
                 queue.put((ERROR_ID, scraping_url))
                 continue
 
-            existing_manuscript = COLLECTION.find_one({"_id": article_id})
-
-            # ================= TMP =================
-            # existing_manuscript["sections"] = [  # type: ignore
-            #     tmp_morph(s) for s in existing_manuscript["sections"]  # type: ignore
-            # ]
-            # existing_manuscript["outro"]["audio_url"] = my_url(  # type: ignore
-            #     existing_manuscript["outro"]["audio_url"]  # type: ignore
-            # )
-            # existing_manuscript["complete_audio_url"] = my_url(  # type: ignore
-            #     existing_manuscript["complete_audio_url"]  # type: ignore
-            # )
-            # logger.debug(existing_manuscript)
-            # insert_or_replace(existing_manuscript)  # type: ignore
-            # ================= TMP =================
-
-            if existing_manuscript is not None:
-                # if "forced_voice" in existing_manuscript:
-                #     manuscript["forced_voice"] = existing_manuscript["forced_voice"]
+            if existing_manuscript := COLLECTION.find_one({"_id": article_id}):
+                # ================= TMP =================
+                # existing_manuscript["sections"] = [
+                #     tmp_morph(s) for s in existing_manuscript["sections"]
+                # ]
+                # if (
+                #     "outro" in existing_manuscript
+                #     and "audio_path" in existing_manuscript["outro"]
+                # ):
+                #     del existing_manuscript["outro"]["audio_path"]
+                # if "complete_audio_path" in existing_manuscript:
+                #     del existing_manuscript["complete_audio_path"]
+                # insert_or_replace(existing_manuscript)
+                # ================= TMP =================
 
                 if manuscript["_id"] in ALWAYS_UPDATE:
                     logger.warning(
@@ -1217,8 +1173,7 @@ def article_processor(queue: multiprocessing.Queue) -> None:
             and (
                 "complete_audio_url" not in a
                 or "transcript" not in a
-                or "complete_audio_path" not in a
-                or not pathlib.Path(a["complete_audio_path"]).exists()
+                or not url_to_path(a["complete_audio_url"]).exists()
             )
         ):
             try:
@@ -1242,7 +1197,7 @@ def sitemap() -> fastapi.Response:
         list(sorted(COLLECTION.find(), key=lambda a: a["_id"])),
         desc="Building sitemap.xml",
     ):
-        if manuscript["state"] == "done":
+        if manuscript["state"] == "done" and "lastmod" in manuscript:
             sitemap += "\n	<url>"
             sitemap += f"\n		<loc>https://www.pprofounddecisions.co.uk/{"empire-wiki/" if manuscript["_id"] else ""}{urllib.parse.quote_plus(manuscript["_id"])}</loc>"
             sitemap += (
@@ -1268,6 +1223,8 @@ def sitemap() -> fastapi.Response:
 
 @APP.get("/api/manuscript/{article_id:path}")
 def manuscript(article_id: str, scraping_url: str = WIKI_URL) -> typing.Any:
+    article_id = article_id.split("#")[0].split("/")[-1]
+
     manuscript = get_article(article_id)
     article_queue.put((article_id, scraping_url))
     if manuscript is not None:
@@ -1342,10 +1299,8 @@ def complete_audio(article_id: str) -> str:
         raise Exception("Article not generated")
     if (
         "complete_audio_url" not in manuscript
-        or "complete_audio_path" not in manuscript
-        or not pathlib.Path(manuscript["complete_audio_path"]).exists()
+        or not url_to_path(manuscript["complete_audio_url"]).exists()
     ):
-        logger.debug(pathlib.Path(manuscript["complete_audio_path"]))
         generate_complete_audio(article_id)
 
     manuscript = get_article(article_id)
@@ -1358,18 +1313,39 @@ APP.mount(
     fastapi.staticfiles.StaticFiles(directory=WEB_DIR, html=True),
     name="Web",
 )
-APP.mount("/robots.txt", fastapi.staticfiles)
-
-APP.mount("/db/", fastapi.staticfiles.StaticFiles(directory=DB_DIR), name="DB")
 
 
-@APP.get("/empire-wiki/{article_id:path}")
+APP.mount(
+    "/db/", fastapi.staticfiles.StaticFiles(directory=DB_DIR, html=True), name="DB"
+)
+
+
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/db") == -1
+
+
+# Filter out /endpoint
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
+
+@APP.get("/robots.txt")
+def robots() -> starlette.responses.FileResponse:
+    return starlette.responses.FileResponse(WEB_DIR / "robots.txt")
+
+
+@APP.get("/favicon.ico")
+def favicon() -> starlette.responses.FileResponse:
+    return starlette.responses.FileResponse(WEB_DIR / "favicon.ico")
+
+
 @APP.get("/{article_id:path}")
 def index(article_id: str) -> fastapi.responses.HTMLResponse:
+    article_id = article_id.split("#")[0].split("/")[-1]
+
     with open(WEB_DIR / "index.html") as f:
         index = f.read()
     article = get_article(article_id)
-    logger.debug(article_id)
     if article:
         if "title" in article and article["title"]:
             index = index.replace(
@@ -1402,15 +1378,13 @@ def index(article_id: str) -> fastapi.responses.HTMLResponse:
                 + index.split('article-content">', 1)[1]
             )
 
-    return fastapi.responses.HTMLResponse(
-        content=index,
-        status_code=(
-            HTTP_LOOKUP[article["_id"]]
-            if article and article["_id"] in HTTP_LOOKUP
-            else (
-                HTTP_LOOKUP[article["state"]]
-                if article and "state" in article and article["state"] in HTTP_LOOKUP
-                else 404
-            )
-        ),
+    status_code = (
+        HTTP_LOOKUP[article["_id"]]
+        if article and article["_id"] in HTTP_LOOKUP
+        else (
+            HTTP_LOOKUP[article["state"]]
+            if article and "state" in article and article["state"] in HTTP_LOOKUP
+            else 404
+        )
     )
+    return fastapi.responses.HTMLResponse(content=index, status_code=status_code)

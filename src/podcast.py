@@ -16,6 +16,10 @@ import pod2gen
 import pymongo
 import tqdm
 
+from .utils import url_to_path
+
+WEB_DIR = pathlib.Path(os.environ["WEB_DIR"])
+
 NAME = os.environ["NAME"]
 DESCRIPTION = os.environ["DESCRIPTION"]
 CATEGORY = pod2gen.Category(*json.loads(os.environ["CATEGORY"].strip('"')))
@@ -29,8 +33,6 @@ WEB = os.environ["WEB"]
 ART = os.environ["ART"]
 EPISODE_LINK_BASE = os.environ["EPISODE_LINK_BASE"]
 MONGODB_DOMAIN = os.environ["MONGODB_DOMAIN"]
-WEB_DIR = pathlib.Path("/app/web")
-DB_DIR = WEB_DIR / "db"
 MANUSCRIPT_FILTER_GROUP = os.environ["MANUSCRIPT_FILTER_GROUP"]
 MANUSCRIPT_FILTER_CATEGORY = os.environ.get("MANUSCRIPT_FILTER_CATEGORY", None)
 MANUSCRIPT_FULL_TYPE_CATEGORY = os.environ.get("MANUSCRIPT_FULL_TYPE_CATEGORY", None)
@@ -51,13 +53,15 @@ def get_episode(manuscript: dict) -> typing.Any:
     try:
         return pod2gen.Episode(
             title=manuscript["title"],
-            summary=next(
-                (
-                    " ".join(span["text"] for span in section["spans"]).strip()
-                    for section in manuscript["sections"]
-                    if section["section_type"] == "p"
-                ),
-                None,
+            summary=pod2gen.htmlencode(
+                next(
+                    (
+                        " ".join(span["text"] for span in section["spans"]).strip()
+                        for section in manuscript["sections"]
+                        if section["section_type"] == "p"
+                    ),
+                    "",
+                )
             ),
             long_summary=pod2gen.htmlencode(
                 markdownify.markdownify(
@@ -69,10 +73,10 @@ def get_episode(manuscript: dict) -> typing.Any:
             ),
             media=pod2gen.Media(
                 f"{EPISODE_URL}/audio/{manuscript_id}.mp3",
-                size=os.stat(DB_DIR / manuscript["complete_audio_path"]).st_size,
+                size=os.stat(url_to_path(manuscript["complete_audio_url"])).st_size,
                 duration=datetime.timedelta(
                     seconds=mutagen.File(
-                        DB_DIR / manuscript["complete_audio_path"]
+                        url_to_path(manuscript["complete_audio_url"])
                     ).info.length
                 ),
             ),
@@ -150,7 +154,6 @@ def index() -> fastapi.Response:
                     )
                     if manuscript["state"] == "done"
                     and "complete_audio_url" in manuscript
-                    and "complete_audio_path" in manuscript
                     and (
                         "group" not in manuscript
                         or manuscript["group"] == MANUSCRIPT_FILTER_GROUP
@@ -215,7 +218,7 @@ def _get_range_header(range_header: str, file_size: int) -> tuple[int, int]:
 
 
 def range_requests_response(
-    request: fastapi.Request, file_path: str, content_type: str
+    request: fastapi.Request, file_path: pathlib.Path, content_type: str
 ) -> fastapi.responses.StreamingResponse:
     """Returns StreamingResponse using Range Requests of a given file"""
 
@@ -272,7 +275,7 @@ def get_manuscript(episode_id: str) -> typing.Any:
 def audio(req: fastapi.Request, episode_id: str) -> fastapi.Response:
     manuscript = get_manuscript(episode_id)
 
-    audio_file = DB_DIR / manuscript["complete_audio_path"]
+    audio_file = url_to_path(manuscript["complete_audio_url"])
 
     try:
         easyid_file = mutagen.easyid3.EasyID3(audio_file)
@@ -339,7 +342,7 @@ def chapters_json(episode_id: str) -> fastapi.Response:
                             manuscript["transcript"][i + 1]["startTime"]
                             if i < len(s) - 1
                             else mutagen.File(
-                                DB_DIR / manuscript["complete_audio_path"]
+                                url_to_path(manuscript["complete_audio_url"])
                             ).info.length
                         )
                         * 1000
@@ -378,7 +381,7 @@ def transcript_srt(episode_id: str) -> fastapi.Response:
         end_time = datetime.datetime.fromtimestamp(
             manuscript["transcript"][i + 1]["startTime"]
             if i < len(manuscript["transcript"]) - 1
-            else mutagen.File(DB_DIR / manuscript["complete_audio_path"]).info.length
+            else mutagen.File(url_to_path(manuscript["complete_audio_url"])).info.length
         ).time()
         srt += f"""{i+1}
 {srt_timestamp (start_time)} --> {srt_timestamp(end_time)}
@@ -388,6 +391,6 @@ def transcript_srt(episode_id: str) -> fastapi.Response:
     return fastapi.Response(content=srt, media_type="application/srt")
 
 
-app.mount(
-    "/", fastapi.staticfiles.StaticFiles(directory=WEB_DIR, html=True), name="Web"
-)
+# app.mount(
+#     "/", fastapi.staticfiles.StaticFiles(directory=WEB_DIR, html=True), name="Web"
+# )

@@ -14,6 +14,7 @@ COPY ./log_conf.json /app/
 
 # copy in app source
 COPY ./src/main.py /app/src/main.py
+COPY ./src/utils.py /app/src/utils.py
 
 # test application
 COPY ./mypy.ini /app/
